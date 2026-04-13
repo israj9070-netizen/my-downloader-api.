@@ -19,27 +19,34 @@ def get_video_info():
             'no_warnings': True,
             'format': 'best',
             'noplaylist': True,
-            # Bot detection se bachne ke liye naye headers
+            # Naya bypass logic
+            'nocheckcertificate': True,
+            'ignoreerrors': False,
+            'logtostderr': False,
+            'addheader': [
+                ('Referer', 'https://www.google.com/'),
+                ('Accept-Language', 'en-US,en;q=0.9'),
+            ],
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
             }
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Pehle info nikaalo
             info = ydl.extract_info(video_url, download=False)
             
-            # Direct link nikalne ka solid tarika
+            # YouTube ke liye direct URL dhoondne ka best tarika
             download_url = None
-            if 'url' in info:
-                download_url = info['url']
-            elif 'formats' in info:
-                for f in reversed(info['formats']):
-                    if f.get('vcodec') != 'none' and f.get('acodec') != 'none':
-                        download_url = f.get('url')
-                        break
+            formats = info.get('formats', [])
             
+            # Sabse acchi quality wala link jo video + audio dono ho
+            valid_formats = [f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
+            if valid_formats:
+                download_url = valid_formats[-1].get('url')
+            else:
+                download_url = info.get('url')
+
             return jsonify({
                 "title": info.get('title', 'Video'),
                 "thumbnail": info.get('thumbnail'),
@@ -47,8 +54,12 @@ def get_video_info():
                 "duration": info.get('duration')
             })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        error_msg = str(e)
+        if "Sign in to confirm" in error_msg:
+            return jsonify({"error": "YouTube is blocking the request. Try a Facebook link to verify it works!"}), 403
+        return jsonify({"error": error_msg}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
 
