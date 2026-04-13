@@ -3,26 +3,25 @@ from flask_cors import CORS
 import yt_dlp
 
 app = Flask(__name__)
-CORS(app)
+# Ye line sabhi errors theek kar degi
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-@app.route('/fetch', methods=['GET'])
-def fetch_video():
-    url = request.args.get('url')
-    if not url:
-        return jsonify({"error": "URL is missing"}), 400
+@app.route('/api/info', methods=['POST'])
+def get_video_info():
+    data = request.json
+    video_url = data.get('url')
     
+    if not video_url:
+        return jsonify({"error": "URL is required"}), 400
+
     try:
-        ydl_opts = {
-            'format': 'best',
-            'quiet': True,
-            'no_warnings': True,
-        }
+        ydl_opts = {'quiet': True, 'noplaylist': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(video_url, download=False)
             return jsonify({
                 "title": info.get('title'),
                 "thumbnail": info.get('thumbnail'),
-                "download_url": info.get('url'),
+                "direct_url": info.get('url'),
                 "duration": info.get('duration')
             })
     except Exception as e:
