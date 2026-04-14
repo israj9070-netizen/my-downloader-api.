@@ -1,65 +1,69 @@
+import instaloader
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
+import os
 
 app = Flask(__name__)
 CORS(app)
 
-@app.route('/api/info', methods=['POST'])
+# Instagram Loader Setup
+L = instaloader.Instaloader()
+
+# --- PURANA DOWNLOADER LOGIC ---
+@app.route('/get-video-info', methods=['POST'])
 def get_video_info():
     data = request.json
-    video_url = data.get('url')
-    
-    if not video_url:
+    url = data.get('url')
+    if not url:
         return jsonify({"error": "URL is required"}), 400
-
+    
     try:
-        ydl_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'format': 'best',
-            'noplaylist': True,
-            # Naya bypass logic
-            'nocheckcertificate': True,
-            'ignoreerrors': False,
-            'logtostderr': False,
-            'addheader': [
-                ('Referer', 'https://www.google.com/'),
-                ('Accept-Language', 'en-US,en;q=0.9'),
-            ],
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            }
-        }
-        
+        ydl_opts = {'quiet': True, 'no_warnings': True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Pehle info nikaalo
-            info = ydl.extract_info(video_url, download=False)
-            
-            # YouTube ke liye direct URL dhoondne ka best tarika
-            download_url = None
-            formats = info.get('formats', [])
-            
-            # Sabse acchi quality wala link jo video + audio dono ho
-            valid_formats = [f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
-            if valid_formats:
-                download_url = valid_formats[-1].get('url')
-            else:
-                download_url = info.get('url')
-
+            info = ydl.extract_info(url, download=False)
             return jsonify({
                 "title": info.get('title', 'Video'),
                 "thumbnail": info.get('thumbnail'),
-                "direct_url": download_url,
-                "duration": info.get('duration')
+                "download_url": info.get('url'),
+                "source": info.get('extractor')
             })
     except Exception as e:
-        error_msg = str(e)
-        if "Sign in to confirm" in error_msg:
-            return jsonify({"error": "YouTube is blocking the request. Try a Facebook link to verify it works!"}), 403
-        return jsonify({"error": error_msg}), 500
+        return jsonify({"error": str(e)}), 400
+
+# --- NAYA STORY VIEWER LOGIC ---
+@app.route('/fetch-stories', methods=['POST'])
+def fetch_stories():
+    data = request.json
+    username = data.get('username', '').replace('@', '').strip()
+    
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    
+    try:
+        profile = instaloader.Profile.from_username(L.context, username)
+        
+        if profile.is_private:
+            return jsonify({"error": "Account is Private. Can't fetch stories anonymously."}), 403
+            
+        stories_data = []
+        # Public stories fetch kar raha hai
+        for story in L.get_stories(userids=[profile.userid]):
+            for item in story.get_items():
+                stories_data.append({
+                    "url": item.video_url if item.is_video else item.display_url,
+                    "is_video": item.is_video,
+                    "thumbnail": item.display_url
+                })
+        
+        if not stories_data:
+            return jsonify({"message": "No active stories found for this user."}), 200
+            
+        return jsonify({"stories": stories_data})
+
+    except Exception as e:
+        return jsonify({"error": "Instagram block or error: " + str(e)}), 400
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-
-
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
