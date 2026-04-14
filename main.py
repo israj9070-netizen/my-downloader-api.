@@ -25,14 +25,19 @@ def download_video():
     }
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return jsonify({
-                "title": info.get('title', 'Video'),
-                "download_url": info.get('url'),
-                "thumbnail": info.get('thumbnail'),
-                "platform": info.get('extractor_key')
-            })
+        with ydl_opts = {
+    'format': 'best',
+    'quiet': True,
+    'no_warnings': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'addmetadata': True,
+    'no_color': True,
+    # Ye line magic karegi
+    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
+
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
