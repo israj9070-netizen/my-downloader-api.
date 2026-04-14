@@ -1,89 +1,63 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
-import instaloader
-import os
 
 app = Flask(__name__)
 CORS(app)
 
-# Instagram Loader Setup
-L = instaloader.Instaloader(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-
-# --- 1. PURANA DOWNLOADER (FB, IG Reels, etc.) ---
-@app.route('/download', methods=['POST'])
-def download_video():
+@app.route('/api/info', methods=['POST'])
+def get_video_info():
     data = request.json
-    url = data.get('url')
-    if not url:
+    video_url = data.get('url')
+    
+    if not video_url:
         return jsonify({"error": "URL is required"}), 400
 
-    ydl_opts = {
-        'format': 'best',
-        'quiet': True,
-        'no_warnings': True,
-    }
-
     try:
-        with ydl_opts = {
-    'format': 'best',
-    'quiet': True,
-    'no_warnings': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'addmetadata': True,
-    'no_color': True,
-    # Ye line magic karegi
-    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-}
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-# --- 2. NAYA YOUTUBE/COOKING DOWNLOADER ---
-# Ye upar wale code se hi handle ho jayega, bas Lovable ko URL bhejna hai
-
-# --- 3. INSTAGRAM STORY VIEWER (With Cookie Support) ---
-@app.route('/fetch-stories', methods=['POST'])
-def fetch_stories():
-    data = request.json
-    username = data.get('username', '').replace('@', '').strip()
-    session_id = data.get('session_id') # Agar aap Lovable se cookie bhejte ho
-
-    if not username:
-        return jsonify({"error": "Username is required"}), 400
-
-    try:
-        # Agar aapne session_id di hai toh login karega (Block se bachne ke liye)
-        if session_id:
-            L.context.set_cookie("sessionid", session_id)
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'format': 'best',
+            'noplaylist': True,
+            # Naya bypass logic
+            'nocheckcertificate': True,
+            'ignoreerrors': False,
+            'logtostderr': False,
+            'addheader': [
+                ('Referer', 'https://www.google.com/'),
+                ('Accept-Language', 'en-US,en;q=0.9'),
+            ],
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            }
+        }
         
-        profile = instaloader.Profile.from_username(L.context, username)
-        
-        if profile.is_private:
-            return jsonify({"error": "Account is Private!"}), 403
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Pehle info nikaalo
+            info = ydl.extract_info(video_url, download=False)
             
-        stories_data = []
-        for story in L.get_stories(userids=[profile.userid]):
-            for item in story.get_items():
-                stories_data.append({
-                    "url": item.video_url if item.is_video else item.display_url,
-                    "is_video": item.is_video,
-                    "thumbnail": item.display_url
-                })
-        
-        if not stories_data:
-            return jsonify({"message": "No active stories found."}), 200
+            # YouTube ke liye direct URL dhoondne ka best tarika
+            download_url = None
+            formats = info.get('formats', [])
             
-        return jsonify({"stories": stories_data})
+            # Sabse acchi quality wala link jo video + audio dono ho
+            valid_formats = [f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
+            if valid_formats:
+                download_url = valid_formats[-1].get('url')
+            else:
+                download_url = info.get('url')
 
+            return jsonify({
+                "title": info.get('title', 'Video'),
+                "thumbnail": info.get('thumbnail'),
+                "direct_url": download_url,
+                "duration": info.get('duration')
+            })
     except Exception as e:
-        # Agar block ho gaya toh ye message aayega
-        if "401" in str(e) or "login" in str(e).lower():
-            return jsonify({"error": "Instagram Blocked! Please update Session ID/Cookie."}), 401
-        return jsonify({"error": str(e)}), 400
+        error_msg = str(e)
+        if "Sign in to confirm" in error_msg:
+            return jsonify({"error": "YouTube is blocking the request. Try a Facebook link to verify it works!"}), 403
+        return jsonify({"error": error_msg}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5000)
